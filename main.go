@@ -56,7 +56,7 @@ func sumRipemd160(hashKey []byte) []byte {
 
 }
 
-func btc_address(ecdsaPubKey *ecdsa.PublicKey, compressed bool) string {
+func btcAddress(ecdsaPubKey *ecdsa.PublicKey, compressed bool) string {
 
 	pub := append(ecdsaPubKey.X.Bytes(), ecdsaPubKey.Y.Bytes()...)
 	pub = append([]byte{4}, pub...)
