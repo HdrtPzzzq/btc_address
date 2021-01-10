@@ -56,14 +56,16 @@ func sumRipemd160(hashKey []byte) []byte {
 
 }
 
-func main() {
-
-	pubKey := getInput()
-	ecdsaPubKey := pubKey.ToECDSA()
+func btc_address(ecdsaPubKey *ecdsa.PublicKey, compressed bool) string {
 
 	pub := append(ecdsaPubKey.X.Bytes(), ecdsaPubKey.Y.Bytes()...)
 	pub = append([]byte{4}, pub...)
-	fmt.Println()
+
+	if ecdsaPubKey.Y.Bit(0) == 0 {
+		pub = append([]byte{2}, ecdsaPubKey.X.Bytes()...)
+	} else {
+		pub = append([]byte{3}, ecdsaPubKey.X.Bytes()...)
+	}
 
 	hashKey1 := sha256.Sum256(pub)
 
@@ -78,6 +80,17 @@ func main() {
 	hash := append(hashKey2, checksum...)
 
 	address := base58.Encode(hash)
+
+	return address
+
+}
+
+func main() {
+
+	pubKey := getInput()
+	ecdsaPubKey := pubKey.ToECDSA()
+
+	address := btc_address(ecdsaPubKey, true)
 
 	fmt.Println("This is your btc address:\n", address)
 
