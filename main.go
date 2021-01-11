@@ -3,14 +3,19 @@ package main
 import (
 	"bufio"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/decred/dcrd/dcrec/secp256k1"
+	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/crypto/ripemd160"
 )
 
@@ -56,7 +61,7 @@ func sumRipemd160(hashKey []byte) []byte {
 
 }
 
-func btcAddress(ecdsaPubKey *ecdsa.PublicKey, compressed bool) string {
+func keyToBtc(ecdsaPubKey *ecdsa.PublicKey, compressed bool) string {
 
 	pub := append(ecdsaPubKey.X.Bytes(), ecdsaPubKey.Y.Bytes()...)
 	pub = append([]byte{4}, pub...)
@@ -85,13 +90,75 @@ func btcAddress(ecdsaPubKey *ecdsa.PublicKey, compressed bool) string {
 
 }
 
+func generateSeed(size int) string {
+
+	bitsNumber := size / 8
+	checkSum := size / 32
+	randomBytes := make([]byte, bitsNumber)
+	_, err := rand.Read(randomBytes)
+
+	if err != nil {
+		fmt.Println("Error:", err)
+		panic(err)
+	}
+
+	bitString := ""
+
+	for i := 0; i < bitsNumber; i++ {
+
+		b := fmt.Sprintf("%b", randomBytes[i])
+
+		for len(b) < 8 {
+			b = "0" + b
+		}
+
+		bitString += b
+
+	}
+
+	firstSha256Byte := sha256.Sum256(randomBytes)[0]
+
+	bitString += fmt.Sprintf("%08b", firstSha256Byte)
+	wordIndex := make([]int, (size+checkSum)/11)
+
+	for i := 0; i < (size + checkSum); i += 11 {
+
+		index, _ := strconv.ParseInt(bitString[i:i+11], 2, 64)
+		wordIndex[i/11] = int(index)
+
+	}
+
+	wordByte, _ := ioutil.ReadFile("english")
+	wordList := strings.Split(string(wordByte), "\n")
+
+	words := wordList[wordIndex[0]]
+
+	for i := 1; i < (size+checkSum)/11; i++ {
+
+		index := wordIndex[i]
+
+		words += " "
+		words += wordList[index]
+
+	}
+
+	seed := pbkdf2.Key([]byte(words), []byte("mnemonic"), 2048, 64, sha512.New)
+
+	seedString := hex.EncodeToString(seed)
+
+	return seedString
+
+}
+
 func main() {
 
-	pubKey := getInput()
-	ecdsaPubKey := pubKey.ToECDSA()
+	//pubKey := getInput()
+	//ecdsaPubKey := pubKey.ToECDSA()
 
-	address := btc_address(ecdsaPubKey, true)
+	//	address := keyToBtc(ecdsaPubKey, true)
 
-	fmt.Println("This is your btc address:\n", address)
+	seed := generateSeed(128)
+
+	fmt.Println("This is your seed\n" + seed)
 
 }
