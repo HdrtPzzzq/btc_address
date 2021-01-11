@@ -8,7 +8,7 @@ Except 'extendedPrivKey' which does not work correctly, others functions functio
 
 ### Implemented
 
-Generate a bitcoin address from a private key.
-Generate a mnemonic phrase therefore a seed.
-Generate a master private key.
-Transform a private key into a public key.
+Generate a bitcoin address from a private key. <br />
+Generate a mnemonic phrase therefore a seed. <br />
+Generate a master private key. <br />
+Transform a private key into a public key. <br />
