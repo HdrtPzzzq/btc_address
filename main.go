@@ -2,13 +2,15 @@ package main
 
 import (
 	"bufio"
-	"crypto/ecdsa"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"os"
 	"strconv"
 	"strings"
@@ -19,7 +21,9 @@ import (
 	"golang.org/x/crypto/ripemd160"
 )
 
-func getInput() *secp256k1.PublicKey {
+// Get []byte of hexa string input
+
+func getInput() []byte {
 
 	reader := bufio.NewReader(os.Stdin)
 	input, err := reader.ReadString('\n')
@@ -37,21 +41,11 @@ func getInput() *secp256k1.PublicKey {
 		panic(err)
 	}
 
-	_, pubKey := secp256k1.PrivKeyFromBytes(inputSlice)
-
-	return pubKey
-}
-
-func printEcdsaKey(key *ecdsa.PublicKey) {
-
-	x := fmt.Sprintf("0x%x", key.X)
-	y := fmt.Sprintf("0x%x", key.Y)
-	fmt.Println("The x coordinates of the key are:\n", x)
-	fmt.Println("The y coordinates of the key are:\n", y)
+	return inputSlice
 
 }
 
-func sumRipemd160(hashKey []byte) []byte {
+func sumRipemd160(hashKey []byte) []byte { // Ripemd160 hash
 
 	hasher := ripemd160.New()
 	hasher.Write([]byte(hashKey))
@@ -61,16 +55,43 @@ func sumRipemd160(hashKey []byte) []byte {
 
 }
 
-func keyToBtc(ecdsaPubKey *ecdsa.PublicKey, compressed bool) string {
+func sumHmac(data []byte, key []byte) []byte { // Hmac using sha512 hash
 
-	pub := append(ecdsaPubKey.X.Bytes(), ecdsaPubKey.Y.Bytes()...)
-	pub = append([]byte{4}, pub...)
+	hash := hmac.New(sha512.New, key)
+	hash.Write(data)
+	hashBytes := hash.Sum(nil)
 
-	if ecdsaPubKey.Y.Bit(0) == 0 {
-		pub = append([]byte{2}, ecdsaPubKey.X.Bytes()...)
-	} else {
-		pub = append([]byte{3}, ecdsaPubKey.X.Bytes()...)
+	return hashBytes
+
+}
+
+// Transform a private key ([]bytes) into its public key ([]byte)
+
+func privToPub(privKey []byte, compressed bool) []byte {
+
+	_, pubKey := secp256k1.PrivKeyFromBytes(privKey)
+	ecdsaPubKey := pubKey.ToECDSA()
+
+	pubKeyByte := append(ecdsaPubKey.X.Bytes(), ecdsaPubKey.Y.Bytes()...)
+	pubKeyByte = append([]byte{4}, pubKeyByte...)
+
+	if compressed && ecdsaPubKey.Y.Bit(0) == 0 {
+		pubKeyByte = append([]byte{2}, ecdsaPubKey.X.Bytes()...)
+	} else if compressed {
+		pubKeyByte = append([]byte{3}, ecdsaPubKey.X.Bytes()...)
 	}
+
+	return pubKeyByte
+
+}
+
+// Transform a private key to a Btc address
+
+func keyToBtc() string {
+
+	privKey := getInput()
+
+	pub := privToPub(privKey, true)
 
 	hashKey1 := sha256.Sum256(pub)
 
@@ -90,7 +111,9 @@ func keyToBtc(ecdsaPubKey *ecdsa.PublicKey, compressed bool) string {
 
 }
 
-func generateSeed(size int) string {
+// Generate the seed of mnemonic phrase from a number of bits
+
+func generateSeed(size int) []byte {
 
 	bitsNumber := size / 8
 	checkSum := size / 32
@@ -144,21 +167,69 @@ func generateSeed(size int) string {
 
 	seed := pbkdf2.Key([]byte(words), []byte("mnemonic"), 2048, 64, sha512.New)
 
-	seedString := hex.EncodeToString(seed)
+	return seed
 
-	return seedString
+}
+
+// Generate the master private key from the seed
+
+func masterPrivKey(seed []byte) []byte {
+
+	extendedPrivateKey := sumHmac(seed, []byte("Bitcoin seed"))
+	return extendedPrivateKey
+
+}
+
+func extendedPrivKey(extendedPrivKey []byte, index uint32) []byte {
+
+	// Int modulo
+	n, _ := new(big.Int).SetString("115792089237316195423570985008687907852837564279074904382605163141518161494337", 10)
+
+	// Index in byte's slice
+	indexByte := make([]byte, 4)
+	binary.BigEndian.PutUint32(indexByte, index)
+
+	// Hash with private key and chaincode
+	data := append(extendedPrivKey[:32], indexByte...)
+	key := extendedPrivKey[32:]
+	hash := sumHmac(data, key)
+
+	// Transform byte's slice hash and private key into hexa string
+	hashString := hex.EncodeToString(hash)
+	privKeyString := hex.EncodeToString(extendedPrivKey[:32])
+
+	// Make Int with previous strings
+	hashInt, _ := new(big.Int).SetString(hashString, 16)
+	privKeyInt, _ := new(big.Int).SetString(privKeyString, 16)
+
+	// Compute the private key's child with Int
+	childPrivKeyInt := big.NewInt(0)
+	childPrivKeyInt.Add(privKeyInt, hashInt)
+	childPrivKeyInt.Mod(childPrivKeyInt, n)
+
+	// Make it string
+	childPrivKeyString := fmt.Sprintf("%x", childPrivKeyInt)
+
+	// Make it byte's slice
+	childPrivKey, _ := hex.DecodeString(childPrivKeyString)
+
+	return childPrivKey
+
+}
+
+func extendedPubKey(extendedPrivKey []byte) []byte {
+
+	privKey := extendedPrivKey[:32]
+	chainCode := extendedPrivKey[32:]
+
+	pubKey := privToPub(privKey, true)
+
+	extendedPubKey := append(pubKey, chainCode...)
+
+	return extendedPubKey
 
 }
 
 func main() {
-
-	//pubKey := getInput()
-	//ecdsaPubKey := pubKey.ToECDSA()
-
-	//	address := keyToBtc(ecdsaPubKey, true)
-
-	seed := generateSeed(128)
-
-	fmt.Println("This is your seed\n" + seed)
 
 }
